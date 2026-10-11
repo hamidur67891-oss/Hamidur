@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "NearLoop"
+description = "A local marketplace for Indian neighborhoods where customers discover verified shops and products in their PIN code and contact shop owners directly."
+version = "1.0.0"
+id = "artifacts/nearloop"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18141
+
+[services.development]
+run = "pnpm --filter @workspace/nearloop run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/nearloop", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/nearloop/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18141"
+BASE_PATH = "/"

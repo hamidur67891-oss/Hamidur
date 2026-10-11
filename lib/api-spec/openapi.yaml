@@ -3,20 +3,24 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: NearLoop local marketplace API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
-    description: Health operations
+  - name: discovery
+  - name: account
+  - name: seller
+  - name: messaging
+  - name: premium
+  - name: admin
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +28,1108 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /catalog:
+    get:
+      operationId: getCatalog
+      tags: [discovery]
+      summary: Get nearby homepage content for an exact PIN code
+      parameters:
+        - in: query
+          name: pinCode
+          required: false
+          schema: { type: string, pattern: "^[0-9]{6}$" }
+        - in: query
+          name: category
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: Local homepage content
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Catalog" }
+  /categories:
+    get:
+      operationId: listCategories
+      tags: [discovery]
+      summary: List active marketplace categories
+      responses:
+        "200":
+          description: Active categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Category" }
+  /shops:
+    get:
+      operationId: searchShops
+      tags: [discovery]
+      summary: Find visible shops in one exact Indian PIN code
+      parameters:
+        - in: query
+          name: pinCode
+          required: true
+          schema: { type: string, pattern: "^[0-9]{6}$" }
+        - in: query
+          name: q
+          required: false
+          schema: { type: string, maxLength: 100 }
+        - in: query
+          name: category
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: Matching visible shops only
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Shop" }
+  /shops/{shopId}:
+    get:
+      operationId: getShop
+      tags: [discovery]
+      summary: Get public details for a visible shop
+      parameters:
+        - in: path
+          name: shopId
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Shop and its visible products
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShopDetails" }
+        "404": { description: Shop not found or not publicly visible }
+  /products:
+    get:
+      operationId: searchProducts
+      tags: [discovery]
+      summary: Find visible products in one exact Indian PIN code
+      parameters:
+        - in: query
+          name: pinCode
+          required: true
+          schema: { type: string, pattern: "^[0-9]{6}$" }
+        - in: query
+          name: q
+          required: false
+          schema: { type: string, maxLength: 100 }
+        - in: query
+          name: category
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: Matching visible products only
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Product" }
+  /products/{productId}:
+    get:
+      operationId: getProduct
+      tags: [discovery]
+      summary: Get a product and its owning shop's details
+      parameters:
+        - in: path
+          name: productId
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Product detail
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProductDetails" }
+        "404": { description: Product not found or not publicly visible }
+  /me:
+    get:
+      operationId: getCurrentUser
+      tags: [account]
+      summary: Get or create the signed-in user's local profile
+      responses:
+        "200":
+          description: Current profile
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CurrentUser" }
+        "401": { description: Sign in required }
+    patch:
+      operationId: updateCurrentUser
+      tags: [account]
+      summary: Update editable profile fields
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProfileUpdate" }
+      responses:
+        "200":
+          description: Updated profile
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CurrentUser" }
+  /seller/shop-status:
+    get:
+      operationId: getSellerShopStatus
+      tags: [seller]
+      summary: Get the current seller's application and shop state
+      responses:
+        "200":
+          description: Seller application state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SellerShopStatus" }
+        "401": { description: Sign in required }
+  /seller/applications:
+    post:
+      operationId: submitShopApplication
+      tags: [seller]
+      summary: Submit a new shop application
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ShopApplicationInput" }
+      responses:
+        "201":
+          description: Application submitted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SellerShopStatus" }
+        "409": { description: An application is already pending or an active shop exists }
+    patch:
+      operationId: resubmitShopApplication
+      tags: [seller]
+      summary: Correct and resubmit a rejected application
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ShopApplicationInput" }
+      responses:
+        "200":
+          description: Application resubmitted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SellerShopStatus" }
+        "409": { description: Only rejected applications can be resubmitted }
+  /seller/overview:
+    get:
+      operationId: getSellerOverview
+      tags: [seller]
+      summary: Get seller dashboard totals and activity
+      responses:
+        "200":
+          description: Approved shop dashboard overview
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SellerOverview" }
+        "403": { description: An approved shop is required }
+  /seller/products:
+    get:
+      operationId: listSellerProducts
+      tags: [seller]
+      summary: List products belonging to the signed-in approved seller
+      responses:
+        "200":
+          description: Seller-owned products
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Product" }
+        "403": { description: An approved shop is required }
+    post:
+      operationId: createSellerProduct
+      tags: [seller]
+      summary: Add a product to the seller's approved shop
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProductInput" }
+      responses:
+        "201":
+          description: Product created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+        "403": { description: An approved shop is required }
+  /seller/products/{productId}:
+    patch:
+      operationId: updateSellerProduct
+      tags: [seller]
+      summary: Update a product owned by the signed-in seller
+      parameters:
+        - in: path
+          name: productId
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProductUpdate" }
+      responses:
+        "200":
+          description: Updated product
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+        "404": { description: Product not owned by the signed-in seller }
+    delete:
+      operationId: deleteSellerProduct
+      tags: [seller]
+      summary: Delete a product owned by the signed-in seller
+      parameters:
+        - in: path
+          name: productId
+          required: true
+          schema: { type: integer }
+      responses:
+        "204": { description: Product deleted }
+        "404": { description: Product not owned by the signed-in seller }
+  /conversations:
+    get:
+      operationId: listConversations
+      tags: [messaging]
+      summary: List conversations the signed-in user may access
+      responses:
+        "200":
+          description: Participant conversations with unread counts
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Conversation" }
+    post:
+      operationId: startConversation
+      tags: [messaging]
+      summary: Start or return a conversation for a visible shop
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConversationInput" }
+      responses:
+        "201":
+          description: Conversation opened
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Conversation" }
+        "404": { description: Shop is not publicly visible }
+  /conversations/{conversationId}/messages:
+    get:
+      operationId: listMessages
+      tags: [messaging]
+      summary: List messages after verifying conversation participation
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Conversation message history
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Message" }
+        "404": { description: Conversation not found or access denied }
+    post:
+      operationId: sendMessage
+      tags: [messaging]
+      summary: Send a message as the signed-in participant
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MessageInput" }
+      responses:
+        "201":
+          description: Message sent
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Message" }
+        "404": { description: Conversation not found or access denied }
+  /notifications:
+    get:
+      operationId: listNotifications
+      tags: [account]
+      summary: List the signed-in user's notifications
+      responses:
+        "200":
+          description: Notifications
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Notification" }
+  /notifications/{notificationId}/read:
+    patch:
+      operationId: markNotificationRead
+      tags: [account]
+      summary: Mark one owned notification as read
+      parameters:
+        - in: path
+          name: notificationId
+          required: true
+          schema: { type: integer }
+      responses:
+        "204": { description: Notification marked read }
+  /complaints:
+    post:
+      operationId: submitComplaint
+      tags: [account]
+      summary: Submit a customer complaint or marketplace report
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ComplaintInput" }
+      responses:
+        "201":
+          description: Report submitted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Complaint" }
+  /subscriptions:
+    get:
+      operationId: getMySubscription
+      tags: [premium]
+      summary: Get the signed-in seller's Premium subscription and payment history
+      responses:
+        "200":
+          description: Subscription details
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SubscriptionOverview" }
+    post:
+      operationId: startSubscription
+      tags: [premium]
+      summary: Create a server-priced pending Premium subscription payment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SubscriptionInput" }
+      responses:
+        "201":
+          description: Pending subscription checkout
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckoutSession" }
+        "403": { description: Shop approval is required }
+  /subscriptions/{subscriptionId}/simulate-payment:
+    post:
+      operationId: completeTestPayment
+      tags: [premium]
+      summary: Complete a clearly labeled development-only simulated payment
+      parameters:
+        - in: path
+          name: subscriptionId
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TestPaymentInput" }
+      responses:
+        "200":
+          description: Test-mode payment result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SubscriptionOverview" }
+        "403": { description: Test payment is disabled outside development test mode }
+        "409": { description: "Payment session is invalid, expired, or already used" }
+  /admin/overview:
+    get:
+      operationId: getAdminOverview
+      tags: [admin]
+      summary: Get marketplace moderation and subscription statistics
+      responses:
+        "200":
+          description: Admin overview
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminOverview" }
+        "403": { description: Admin access required }
+  /admin/shops:
+    get:
+      operationId: listAdminShops
+      tags: [admin]
+      summary: List shops for moderation
+      parameters:
+        - in: query
+          name: status
+          required: false
+          schema: { type: string, enum: [pending, approved, rejected, suspended, all] }
+      responses:
+        "200":
+          description: Moderation queue and shops
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AdminShop" }
+        "403": { description: Admin access required }
+  /admin/shops/{shopId}:
+    patch:
+      operationId: updateAdminShop
+      tags: [admin]
+      summary: Approve, reject, or suspend a shop
+      parameters:
+        - in: path
+          name: shopId
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ShopDecisionInput" }
+      responses:
+        "200":
+          description: Updated shop
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminShop" }
+        "403": { description: Admin access required }
+  /admin/sellers:
+    get:
+      operationId: listAdminSellers
+      tags: [admin]
+      summary: List seller accounts and their shop states
+      responses:
+        "200":
+          description: Seller management list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AdminSeller" }
+        "403": { description: Admin access required }
+  /admin/sellers/{userId}:
+    patch:
+      operationId: updateAdminSeller
+      tags: [admin]
+      summary: Suspend or restore a seller account
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SellerDecisionInput" }
+      responses:
+        "200":
+          description: Updated seller
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminSeller" }
+        "403": { description: Admin access required }
+  /admin/products:
+    get:
+      operationId: listAdminProducts
+      tags: [admin]
+      summary: List products for moderation
+      responses:
+        "200":
+          description: Product moderation list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AdminProduct" }
+        "403": { description: Admin access required }
+  /admin/products/{productId}:
+    patch:
+      operationId: updateAdminProduct
+      tags: [admin]
+      summary: Hide or restore a product
+      parameters:
+        - in: path
+          name: productId
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProductModerationInput" }
+      responses:
+        "200":
+          description: Moderated product
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminProduct" }
+        "403": { description: Admin access required }
+  /admin/complaints:
+    get:
+      operationId: listAdminComplaints
+      tags: [admin]
+      summary: List customer complaints and reports
+      responses:
+        "200":
+          description: Complaint queue
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Complaint" }
+        "403": { description: Admin access required }
+  /admin/complaints/{complaintId}:
+    patch:
+      operationId: updateAdminComplaint
+      tags: [admin]
+      summary: Update complaint state and response
+      parameters:
+        - in: path
+          name: complaintId
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ComplaintUpdate" }
+      responses:
+        "200":
+          description: Updated complaint
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Complaint" }
+        "403": { description: Admin access required }
+  /admin/billing:
+    get:
+      operationId: getAdminBilling
+      tags: [admin]
+      summary: List subscription and payment records
+      responses:
+        "200":
+          description: Billing history and current Premium status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminBilling" }
+        "403": { description: Admin access required }
+  /admin/categories:
+    get:
+      operationId: listAdminCategories
+      tags: [admin]
+      summary: List all categories
+      responses:
+        "200":
+          description: Category configuration
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Category" }
+        "403": { description: Admin access required }
+    post:
+      operationId: createAdminCategory
+      tags: [admin]
+      summary: Create a marketplace category
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CategoryInput" }
+      responses:
+        "201":
+          description: Created category
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Category" }
+        "403": { description: Admin access required }
+  /admin/categories/{categoryId}:
+    patch:
+      operationId: updateAdminCategory
+      tags: [admin]
+      summary: Update category name or availability
+      parameters:
+        - in: path
+          name: categoryId
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CategoryUpdate" }
+      responses:
+        "200":
+          description: Updated category
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Category" }
+        "403": { description: Admin access required }
+    delete:
+      operationId: deleteAdminCategory
+      tags: [admin]
+      summary: Remove an unused category
+      parameters:
+        - in: path
+          name: categoryId
+          required: true
+          schema: { type: integer }
+      responses:
+        "204": { description: Category deleted }
+        "409": { description: Category is in use }
+        "403": { description: Admin access required }
+  /admin/pincodes:
+    get:
+      operationId: listAdminPincodes
+      tags: [admin]
+      summary: List supported verified PIN codes
+      responses:
+        "200":
+          description: PIN code management list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Pincode" }
+        "403": { description: Admin access required }
+    post:
+      operationId: createAdminPincode
+      tags: [admin]
+      summary: Add an approved six-digit service PIN code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PincodeInput" }
+      responses:
+        "201":
+          description: Created PIN code
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Pincode" }
+        "403": { description: Admin access required }
+  /admin/pincodes/{pincodeId}:
+    patch:
+      operationId: updateAdminPincode
+      tags: [admin]
+      summary: Update an approved service PIN code
+      parameters:
+        - in: path
+          name: pincodeId
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PincodeUpdate" }
+      responses:
+        "200":
+          description: Updated PIN code
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Pincode" }
+        "403": { description: Admin access required }
+    delete:
+      operationId: deleteAdminPincode
+      tags: [admin]
+      summary: Disable a supported PIN code
+      parameters:
+        - in: path
+          name: pincodeId
+          required: true
+          schema: { type: integer }
+      responses:
+        "204": { description: PIN code disabled }
+        "403": { description: Admin access required }
 components:
   schemas:
     HealthStatus:
       type: object
       properties:
-        status:
-          type: string
-      required:
-        - status
-
+        status: { type: string }
+      required: [status]
+    Category:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        slug: { type: string }
+        active: { type: boolean }
+      required: [id, name, slug, active]
+    Pincode:
+      type: object
+      properties:
+        id: { type: integer }
+        pinCode: { type: string }
+        areaName: { type: string }
+        active: { type: boolean }
+      required: [id, pinCode, areaName, active]
+    Shop:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        category: { type: string }
+        description: { type: ["string", "null"] }
+        address: { type: string }
+        pinCode: { type: string }
+        ownerName: { type: string }
+        whatsappNumber: { type: string }
+        imageUrl: { type: ["string", "null"] }
+        isPremium: { type: boolean }
+        productCount: { type: integer }
+      required: [id, name, category, description, address, pinCode, ownerName, whatsappNumber, imageUrl, isPremium, productCount]
+    Product:
+      type: object
+      properties:
+        id: { type: integer }
+        shopId: { type: integer }
+        shopName: { type: string }
+        name: { type: string }
+        category: { type: string }
+        description: { type: ["string", "null"] }
+        price: { type: number }
+        available: { type: boolean }
+        imageUrl: { type: ["string", "null"] }
+        pinCode: { type: string }
+        isFeatured: { type: boolean }
+      required: [id, shopId, shopName, name, category, description, price, available, imageUrl, pinCode, isFeatured]
+    ShopDetails:
+      type: object
+      properties:
+        shop: { $ref: "#/components/schemas/Shop" }
+        products:
+          type: array
+          items: { $ref: "#/components/schemas/Product" }
+      required: [shop, products]
+    ProductDetails:
+      type: object
+      properties:
+        product: { $ref: "#/components/schemas/Product" }
+        shop: { $ref: "#/components/schemas/Shop" }
+      required: [product, shop]
+    Catalog:
+      type: object
+      properties:
+        pinCode: { type: ["string", "null"] }
+        categories:
+          type: array
+          items: { $ref: "#/components/schemas/Category" }
+        shops:
+          type: array
+          items: { $ref: "#/components/schemas/Shop" }
+        products:
+          type: array
+          items: { $ref: "#/components/schemas/Product" }
+      required: [pinCode, categories, shops, products]
+    CurrentUser:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        email: { type: string }
+        phone: { type: ["string", "null"] }
+        role: { type: string, enum: [customer, seller, admin] }
+        pinCode: { type: ["string", "null"] }
+      required: [id, name, email, phone, role, pinCode]
+    ProfileUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        phone: { type: ["string", "null"], maxLength: 16 }
+        pinCode: { type: ["string", "null"], pattern: "^[0-9]{6}$" }
+    ShopApplication:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        ownerName: { type: string }
+        category: { type: string }
+        address: { type: string }
+        pinCode: { type: string }
+        contactPhone: { type: string }
+        whatsappNumber: { type: string }
+        status: { type: string, enum: [pending, approved, rejected, suspended] }
+        rejectionReason: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+      required: [id, name, ownerName, category, address, pinCode, contactPhone, whatsappNumber, status, rejectionReason, createdAt]
+    ShopApplicationInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 2, maxLength: 120 }
+        ownerName: { type: string, minLength: 2, maxLength: 120 }
+        category: { type: string, minLength: 2, maxLength: 80 }
+        address: { type: string, minLength: 5, maxLength: 500 }
+        pinCode: { type: string, pattern: "^[0-9]{6}$" }
+        contactPhone: { type: string, minLength: 10, maxLength: 16 }
+        whatsappNumber: { type: string, minLength: 10, maxLength: 16 }
+      required: [name, ownerName, category, address, pinCode, contactPhone, whatsappNumber]
+    SellerShopStatus:
+      type: object
+      properties:
+        application: { oneOf: [{ $ref: "#/components/schemas/ShopApplication" }, { type: "null" }] }
+        shop: { oneOf: [{ $ref: "#/components/schemas/Shop" }, { type: "null" }] }
+      required: [application, shop]
+    SellerOverview:
+      type: object
+      properties:
+        shop: { $ref: "#/components/schemas/Shop" }
+        totalProducts: { type: integer }
+        availableProducts: { type: integer }
+        inquiries: { type: integer }
+        profileViews: { type: integer }
+        subscriptionStatus: { type: string, enum: [inactive, pending, active, expired] }
+        expiresAt: { type: ["string", "null"], format: date-time }
+      required: [shop, totalProducts, availableProducts, inquiries, profileViews, subscriptionStatus, expiresAt]
+    ProductInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 2, maxLength: 120 }
+        category: { type: string, minLength: 2, maxLength: 80 }
+        description: { type: ["string", "null"], maxLength: 2000 }
+        price: { type: number, minimum: 0 }
+        available: { type: boolean }
+        imageUrl: { type: ["string", "null"], maxLength: 500 }
+        isFeatured: { type: boolean }
+      required: [name, category, price, available, isFeatured]
+    ProductUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 2, maxLength: 120 }
+        category: { type: string, minLength: 2, maxLength: 80 }
+        description: { type: ["string", "null"], maxLength: 2000 }
+        price: { type: number, minimum: 0 }
+        available: { type: boolean }
+        imageUrl: { type: ["string", "null"], maxLength: 500 }
+        isFeatured: { type: boolean }
+    Conversation:
+      type: object
+      properties:
+        id: { type: integer }
+        shopId: { type: integer }
+        shopName: { type: string }
+        customerName: { type: string }
+        lastMessage: { type: ["string", "null"] }
+        lastMessageAt: { type: ["string", "null"], format: date-time }
+        unreadCount: { type: integer }
+        productId: { type: ["integer", "null"] }
+        productName: { type: ["string", "null"] }
+      required: [id, shopId, shopName, customerName, lastMessage, lastMessageAt, unreadCount, productId, productName]
+    ConversationInput:
+      type: object
+      properties:
+        shopId: { type: integer }
+        productId: { type: ["integer", "null"] }
+      required: [shopId]
+    Message:
+      type: object
+      properties:
+        id: { type: integer }
+        conversationId: { type: integer }
+        senderId: { type: integer }
+        senderName: { type: string }
+        body: { type: string }
+        createdAt: { type: string, format: date-time }
+        readAt: { type: ["string", "null"], format: date-time }
+      required: [id, conversationId, senderId, senderName, body, createdAt, readAt]
+    MessageInput:
+      type: object
+      properties:
+        body: { type: string, minLength: 1, maxLength: 2000 }
+      required: [body]
+    Notification:
+      type: object
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        body: { type: string }
+        createdAt: { type: string, format: date-time }
+        readAt: { type: ["string", "null"], format: date-time }
+      required: [id, title, body, createdAt, readAt]
+    Complaint:
+      type: object
+      properties:
+        id: { type: integer }
+        userId: { type: integer }
+        shopId: { type: ["integer", "null"] }
+        productId: { type: ["integer", "null"] }
+        subject: { type: string }
+        details: { type: string }
+        status: { type: string, enum: [open, reviewing, resolved, dismissed] }
+        adminNote: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+      required: [id, userId, shopId, productId, subject, details, status, adminNote, createdAt]
+    ComplaintInput:
+      type: object
+      properties:
+        shopId: { type: ["integer", "null"] }
+        productId: { type: ["integer", "null"] }
+        subject: { type: string, minLength: 2, maxLength: 160 }
+        details: { type: string, minLength: 10, maxLength: 4000 }
+      required: [subject, details]
+    ComplaintUpdate:
+      type: object
+      properties:
+        status: { type: string, enum: [open, reviewing, resolved, dismissed] }
+        adminNote: { type: ["string", "null"], maxLength: 2000 }
+      required: [status]
+    SubscriptionInput:
+      type: object
+      properties:
+        shopId: { type: integer }
+      required: [shopId]
+    CheckoutSession:
+      type: object
+      properties:
+        subscriptionId: { type: integer }
+        amountInr: { type: number }
+        currency: { type: string }
+        status: { type: string }
+        testMode: { type: boolean }
+        testToken: { type: ["string", "null"] }
+        message: { type: string }
+      required: [subscriptionId, amountInr, currency, status, testMode, testToken, message]
+    TestPaymentInput:
+      type: object
+      properties:
+        testToken: { type: string, minLength: 20, maxLength: 200 }
+        outcome: { type: string, enum: [success, decline] }
+      required: [testToken, outcome]
+    Subscription:
+      type: object
+      properties:
+        id: { type: integer }
+        shopId: { type: integer }
+        status: { type: string, enum: [pending, active, expired, cancelled] }
+        amountInr: { type: number }
+        startsAt: { type: ["string", "null"], format: date-time }
+        expiresAt: { type: ["string", "null"], format: date-time }
+        renewalReminderSentAt: { type: ["string", "null"], format: date-time }
+      required: [id, shopId, status, amountInr, startsAt, expiresAt, renewalReminderSentAt]
+    Payment:
+      type: object
+      properties:
+        id: { type: integer }
+        subscriptionId: { type: integer }
+        amountInr: { type: number }
+        status: { type: string, enum: [pending, verified, failed] }
+        provider: { type: string }
+        reference: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+      required: [id, subscriptionId, amountInr, status, provider, reference, createdAt]
+    SubscriptionOverview:
+      type: object
+      properties:
+        subscription: { oneOf: [{ $ref: "#/components/schemas/Subscription" }, { type: "null" }] }
+        payments:
+          type: array
+          items: { $ref: "#/components/schemas/Payment" }
+        monthlyPriceInr: { type: number }
+        testMode: { type: boolean }
+      required: [subscription, payments, monthlyPriceInr, testMode]
+    AdminShop:
+      allOf:
+        - $ref: "#/components/schemas/Shop"
+        - type: object
+          properties:
+            ownerId: { type: integer }
+            ownerEmail: { type: string }
+            status: { type: string, enum: [pending, approved, rejected, suspended] }
+            rejectionReason: { type: ["string", "null"] }
+          required: [ownerId, ownerEmail, status, rejectionReason]
+    AdminSeller:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        email: { type: string }
+        phone: { type: ["string", "null"] }
+        status: { type: string }
+        shopName: { type: ["string", "null"] }
+        shopStatus: { type: ["string", "null"] }
+      required: [id, name, email, phone, status, shopName, shopStatus]
+    AdminProduct:
+      allOf:
+        - $ref: "#/components/schemas/Product"
+        - type: object
+          properties:
+            shopStatus: { type: string }
+            moderationStatus: { type: string, enum: [visible, hidden] }
+            ownerEmail: { type: string }
+          required: [shopStatus, moderationStatus, ownerEmail]
+    ShopDecisionInput:
+      type: object
+      properties:
+        status: { type: string, enum: [approved, rejected, suspended] }
+        reason: { type: ["string", "null"], maxLength: 1000 }
+      required: [status]
+    SellerDecisionInput:
+      type: object
+      properties:
+        status: { type: string, enum: [active, suspended] }
+      required: [status]
+    ProductModerationInput:
+      type: object
+      properties:
+        moderationStatus: { type: string, enum: [visible, hidden] }
+      required: [moderationStatus]
+    AdminOverview:
+      type: object
+      properties:
+        shops: { type: integer }
+        sellers: { type: integer }
+        pendingShops: { type: integer }
+        products: { type: integer }
+        openComplaints: { type: integer }
+        activeSubscriptions: { type: integer }
+        verifiedRevenueInr: { type: number }
+      required: [shops, sellers, pendingShops, products, openComplaints, activeSubscriptions, verifiedRevenueInr]
+    AdminBilling:
+      type: object
+      properties:
+        subscriptions:
+          type: array
+          items: { $ref: "#/components/schemas/Subscription" }
+        payments:
+          type: array
+          items: { $ref: "#/components/schemas/Payment" }
+      required: [subscriptions, payments]
+    CategoryInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 2, maxLength: 80 }
+        slug: { type: string, minLength: 2, maxLength: 100 }
+      required: [name, slug]
+    CategoryUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 2, maxLength: 80 }
+        slug: { type: string, minLength: 2, maxLength: 100 }
+        active: { type: boolean }
+    PincodeInput:
+      type: object
+      properties:
+        pinCode: { type: string, pattern: "^[0-9]{6}$" }
+        areaName: { type: string, minLength: 2, maxLength: 120 }
+      required: [pinCode, areaName]
+    PincodeUpdate:
+      type: object
+      properties:
+        areaName: { type: string, minLength: 2, maxLength: 120 }
+        active: { type: boolean }
