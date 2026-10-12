@@ -1159,3 +1159,45 @@ export const DeleteAdminPincodeParams = zod.object({
 export const DeleteAdminPincodeResponse = zod.void()
 
 
+/**
+ * @summary Request a short-lived upload URL for an approved seller's product photo
+ */
+export const requestUploadUrlBodyNameMax = 180;
+
+export const requestUploadUrlBodySizeMax = 5242880;
+
+
+
+export const RequestUploadUrlBody = zod.object({
+  "name": zod.string().min(1).max(requestUploadUrlBodyNameMax),
+  "size": zod.number().int().min(1).max(requestUploadUrlBodySizeMax),
+  "contentType": zod.enum(['image/jpeg', 'image/png', 'image/webp', 'image/avif'])
+})
+
+export const requestUploadUrlResponseMetadataNameMax = 180;
+
+export const requestUploadUrlResponseMetadataSizeMax = 5242880;
+
+
+
+export const RequestUploadUrlResponse = zod.object({
+  "uploadURL": zod.string().url(),
+  "objectPath": zod.string(),
+  "metadata": zod.object({
+  "name": zod.string().min(1).max(requestUploadUrlResponseMetadataNameMax),
+  "size": zod.number().int().min(1).max(requestUploadUrlResponseMetadataSizeMax),
+  "contentType": zod.enum(['image/jpeg', 'image/png', 'image/webp', 'image/avif'])
+})
+})
+
+
+/**
+ * @summary Serve a public product image or a seller's private upload preview
+ */
+export const GetStorageObjectParams = zod.object({
+  "objectPath": zod.coerce.string()
+})
+
+export const GetStorageObjectResponse = zod.unknown()
+
+

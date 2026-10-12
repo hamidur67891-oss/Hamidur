@@ -1,4 +1,4 @@
-import { and, eq, exists, gt, sql } from "drizzle-orm";
+import { and, eq, exists, gt, or, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   categoriesTable,
@@ -8,8 +8,8 @@ import {
   subscriptionsTable,
   usersTable,
 } from "@workspace/db";
-import type { Shop } from "@workspace/db";
 import { HttpError } from "./http";
+import type { Shop } from "@workspace/db";
 
 export function visibleShopConditions(pinCode?: string) {
   const conditions = [
@@ -50,6 +50,22 @@ export function visibleShopConditions(pinCode?: string) {
 
   if (pinCode) conditions.push(eq(shopsTable.pinCode, pinCode));
   return and(...conditions);
+}
+
+export async function isPublicProductImage(imageUrl: string): Promise<boolean> {
+  const [product] = await db
+    .select({ id: productsTable.id })
+    .from(productsTable)
+    .innerJoin(shopsTable, eq(shopsTable.id, productsTable.shopId))
+    .where(
+      and(
+        eq(productsTable.imageUrl, imageUrl),
+        eq(productsTable.moderationStatus, "visible"),
+        visibleShopConditions(),
+      ),
+    )
+    .limit(1);
+  return Boolean(product);
 }
 
 export async function getPublicShop(shopId: number, pinCode?: string) {
@@ -124,7 +140,10 @@ export async function getActiveCategory(categoryName: string) {
     .where(
       and(
         eq(categoriesTable.active, true),
-        sql`lower(${categoriesTable.name}) = lower(${nameOrSlug}) OR ${categoriesTable.slug} = ${nameOrSlug.toLowerCase()}`,
+        or(
+          sql`lower(${categoriesTable.name}) = lower(${nameOrSlug})`,
+          eq(categoriesTable.slug, nameOrSlug.toLowerCase()),
+        ),
       ),
     )
     .limit(1);
@@ -134,6 +153,3 @@ export async function getActiveCategory(categoryName: string) {
   return category;
 }
 
-export async function shopRowToPublic(shop: Shop) {
-  return getPublicShop(shop.id);
-}

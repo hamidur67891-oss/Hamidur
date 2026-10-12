@@ -66,3 +66,6 @@ export * from './subscriptionOverview';
 export * from './subscriptionStatus';
 export * from './testPaymentInput';
 export * from './testPaymentInputOutcome';
+export * from './uploadUrlRequest';
+export * from './uploadUrlRequestContentType';
+export * from './uploadUrlResponse';

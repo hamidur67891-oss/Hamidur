@@ -1,5 +1,5 @@
 import type { ErrorRequestHandler, RequestHandler } from "express";
-import { ZodError, type ZodType } from "zod";
+import { ZodError, z, type ZodTypeAny } from "zod";
 
 export class HttpError extends Error {
   constructor(
@@ -12,9 +12,12 @@ export class HttpError extends Error {
   }
 }
 
-export function parseInput<T>(schema: ZodType<T>, value: unknown): T {
+export function parseInput<Schema extends ZodTypeAny>(
+  schema: Schema,
+  value: unknown,
+): z.infer<Schema> {
   try {
-    return schema.parse(value);
+    return schema.parse(value) as z.infer<Schema>;
   } catch (error) {
     if (error instanceof ZodError) {
       throw new HttpError(400, "The request contains invalid fields.", "invalid_input");
@@ -44,10 +47,17 @@ export function normalizePhone(value: string): string {
 export function normalizeWhatsApp(value: string): string {
   const normalized = normalizePhone(value);
   const digits = normalized.replace(/\D/g, "");
-  if (digits.length < 10 || digits.length > 15) {
-    throw new HttpError(400, "Enter a valid WhatsApp number.", "invalid_whatsapp");
+  const nationalNumber = digits.length === 12 && digits.startsWith("91")
+    ? digits.slice(2)
+    : digits;
+  if (!/^[6-9]\d{9}$/.test(nationalNumber)) {
+    throw new HttpError(
+      400,
+      "Enter a valid 10-digit Indian mobile number, optionally with +91.",
+      "invalid_whatsapp",
+    );
   }
-  return digits;
+  return `91${nationalNumber}`;
 }
 
 export function safeImageUrl(value: string | null | undefined): string | null {
@@ -77,6 +87,10 @@ export const sameOriginWritesOnly: RequestHandler = (req, _res, next) => {
   }
 
   const origin = req.get("origin");
+  if (!origin && fetchSite !== "same-origin") {
+    next(new HttpError(403, "A same-origin browser request is required.", "csrf_rejected"));
+    return;
+  }
   if (origin) {
     try {
       const originHost = new URL(origin).host.toLowerCase();
@@ -117,7 +131,10 @@ export const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
 
   res.status(status).json({
     error: status === 500 ? "internal_error" : "request_error",
-    message: status === 500 ? "The request could not be completed." : "The request could not be completed.",
+    message:
+      status === 500
+        ? "The request could not be completed."
+        : "The request could not be completed.",
   });
 };
 

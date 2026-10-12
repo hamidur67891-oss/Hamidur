@@ -1,3 +1,4 @@
+import { isNull, sql } from "drizzle-orm";
 import {
   index,
   integer,
@@ -6,6 +7,7 @@ import {
   serial,
   text,
   timestamp,
+  uniqueIndex,
   varchar,
 } from "drizzle-orm/pg-core";
 import {
@@ -46,6 +48,12 @@ export const conversationsTable = pgTable(
     index("conversations_shop_idx").on(table.shopId, table.updatedAt),
     index("conversations_customer_idx").on(table.customerId, table.updatedAt),
     index("conversations_product_idx").on(table.productId),
+    uniqueIndex("conversations_unique_general_shop_customer")
+      .on(table.shopId, table.customerId)
+      .where(isNull(table.productId)),
+    uniqueIndex("conversations_unique_product_shop_customer")
+      .on(table.shopId, table.customerId, table.productId)
+      .where(sql`${table.productId} is not null`),
   ],
 );
 

@@ -2,6 +2,7 @@ import {
   and,
   desc,
   eq,
+  ne,
   sql,
 } from "drizzle-orm";
 import { Router } from "express";
@@ -23,9 +24,10 @@ import {
 } from "@workspace/api-zod";
 import { db } from "@workspace/db";
 import {
-  applicationStatusEnum,
   categoriesTable,
+  conversationsTable,
   productsTable,
+  productImagesTable,
   pincodesTable,
   shopApplicationsTable,
   shopsTable,
@@ -39,8 +41,10 @@ import {
   normalizePhone,
   normalizeWhatsApp,
   parseInput,
-  safeImageUrl,
 } from "../lib/http";
+import { parseSellerImagePath, resolveProductImage } from "../lib/productImage";
+import { getSellerObject, setObjectAclPolicy } from "../lib/objectStorage";
+import { logger } from "../lib/logger";
 import {
   getActiveCategory,
   getActiveSubscription,
@@ -76,6 +80,24 @@ function mapApplication(row: typeof shopApplicationsTable.$inferSelect) {
     rejectionReason: row.rejectionReason,
     createdAt: row.createdAt,
   };
+}
+
+async function retireImageIfUnused(imageUrl: string | null, ownerId: number, excludingProductId: number) {
+  if (!imageUrl) return;
+  const path = parseSellerImagePath(imageUrl);
+  if (!path || path.ownerId !== ownerId) return;
+  const [reference] = await db
+    .select({ id: productsTable.id })
+    .from(productsTable)
+    .where(and(eq(productsTable.imageUrl, imageUrl), ne(productsTable.id, excludingProductId)))
+    .limit(1);
+  if (reference) return;
+  try {
+    const file = await getSellerObject(ownerId, path.relativePath);
+    await setObjectAclPolicy(file, { owner: String(ownerId), visibility: "private" });
+  } catch (error) {
+    logger.warn({ err: error }, "Could not privatize an unused product image");
+  }
 }
 
 async function getLatestApplication(userId: number) {
@@ -368,8 +390,8 @@ router.get(
         .where(eq(productsTable.shopId, shop.id)),
       db
         .select({ count: sql<number>`count(*)::int` })
-        .from((await import("@workspace/db")).conversationsTable)
-        .where(eq((await import("@workspace/db")).conversationsTable.shopId, shop.id)),
+        .from(conversationsTable)
+        .where(eq(conversationsTable.shopId, shop.id)),
       db
         .select()
         .from(subscriptionsTable)
@@ -438,10 +460,12 @@ router.post(
   sellerActionLimiter,
   requireRole("seller"),
   async (req, res) => {
-    const shop = await requireSellerShop(currentUser(req).id);
+    const user = currentUser(req);
+    const shop = await requireSellerShop(user.id);
     const input = parseInput(CreateSellerProductBody, req.body);
     const category = await getActiveCategory(input.category);
     const premium = await getActiveSubscription(shop.id);
+    const imageUrl = await resolveProductImage(input.imageUrl, user.id);
     const [created] = await db
       .insert(productsTable)
       .values({
@@ -451,11 +475,19 @@ router.post(
         description: input.description?.trim() || null,
         pricePaise: Math.round(input.price * 100),
         available: input.available,
-        imageUrl: safeImageUrl(input.imageUrl),
+        imageUrl,
         isFeatured: Boolean(input.isFeatured && premium),
       })
       .returning();
     if (!created) throw new HttpError(500, "Unable to create the product.");
+    const imagePath = imageUrl ? parseSellerImagePath(imageUrl) : null;
+    if (imagePath) {
+      await db.insert(productImagesTable).values({
+        productId: created.id,
+        objectPath: imagePath.relativePath,
+        altText: cleanText(input.name),
+      });
+    }
     const product = await getProductForSeller(created.id, shop.id);
     if (!product) throw new HttpError(500, "Unable to load the new product.");
     res.status(201).json(CreateSellerProductResponse.parse(product));
@@ -482,6 +514,11 @@ router.patch(
       )
       .limit(1);
     if (!owned) throw new HttpError(404, "Product not found in your shop.", "product_not_found");
+    const [previous] = await db
+      .select({ imageUrl: productsTable.imageUrl })
+      .from(productsTable)
+      .where(eq(productsTable.id, productId))
+      .limit(1);
 
     const changes: Partial<typeof productsTable.$inferInsert> = {
       updatedAt: new Date(),
@@ -498,22 +535,38 @@ router.patch(
     }
     if (input.available !== undefined) changes.available = input.available;
     if (input.imageUrl !== undefined) {
-      changes.imageUrl = safeImageUrl(input.imageUrl);
+      changes.imageUrl = await resolveProductImage(input.imageUrl, user.id);
     }
     if (input.isFeatured !== undefined) {
       const premium = await getActiveSubscription(shop.id);
       changes.isFeatured = Boolean(input.isFeatured && premium);
     }
 
-    await db
-      .update(productsTable)
-      .set(changes)
-      .where(
-        and(
-          eq(productsTable.id, productId),
-          eq(productsTable.shopId, shop.id),
-        ),
-      );
+    await db.transaction(async (tx) => {
+      await tx
+        .update(productsTable)
+        .set(changes)
+        .where(
+          and(
+            eq(productsTable.id, productId),
+            eq(productsTable.shopId, shop.id),
+          ),
+        );
+      if (input.imageUrl !== undefined) {
+        await tx.delete(productImagesTable).where(eq(productImagesTable.productId, productId));
+        const imagePath = changes.imageUrl ? parseSellerImagePath(changes.imageUrl) : null;
+        if (imagePath) {
+          await tx.insert(productImagesTable).values({
+            productId,
+            objectPath: imagePath.relativePath,
+            altText: cleanText(input.name ?? ""),
+          });
+        }
+      }
+    });
+    if (input.imageUrl !== undefined && previous?.imageUrl && previous.imageUrl !== changes.imageUrl) {
+      await retireImageIfUnused(previous.imageUrl, user.id, productId);
+    }
     const product = await getProductForSeller(productId, shop.id);
     if (!product) throw new HttpError(404, "Product not found in your shop.", "product_not_found");
     res.json(UpdateSellerProductResponse.parse(product));
@@ -525,8 +578,15 @@ router.delete(
   sellerActionLimiter,
   requireRole("seller"),
   async (req, res) => {
-    const shop = await requireSellerShop(currentUser(req).id);
+    const user = currentUser(req);
+    const shop = await requireSellerShop(user.id);
     const { productId } = parseInput(DeleteSellerProductParams, req.params);
+    const [existing] = await db
+      .select({ imageUrl: productsTable.imageUrl })
+      .from(productsTable)
+      .where(and(eq(productsTable.id, productId), eq(productsTable.shopId, shop.id)))
+      .limit(1);
+    if (!existing) throw new HttpError(404, "Product not found in your shop.", "product_not_found");
     const [deleted] = await db
       .delete(productsTable)
       .where(
@@ -537,6 +597,7 @@ router.delete(
       )
       .returning({ id: productsTable.id });
     if (!deleted) throw new HttpError(404, "Product not found in your shop.", "product_not_found");
+    await retireImageIfUnused(existing.imageUrl, user.id, productId);
     res.status(204).end();
   },
 );

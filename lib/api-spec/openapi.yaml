@@ -15,6 +15,7 @@ tags:
   - name: messaging
   - name: premium
   - name: admin
+  - name: storage
 paths:
   /healthz:
     get:
@@ -757,6 +758,43 @@ paths:
       responses:
         "204": { description: PIN code disabled }
         "403": { description: Admin access required }
+  /storage/uploads/request-url:
+    post:
+      operationId: requestUploadUrl
+      tags: [storage]
+      summary: Request a short-lived upload URL for an approved seller's product photo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UploadUrlRequest" }
+      responses:
+        "200":
+          description: Presigned upload URL and private object path
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadUrlResponse" }
+        "400": { description: Invalid file metadata }
+        "401": { description: Sign-in required }
+        "403": { description: Approved seller access required }
+  /storage/objects/{objectPath}:
+    get:
+      operationId: getStorageObject
+      tags: [storage]
+      summary: Serve a public product image or a seller's private upload preview
+      parameters:
+        - in: path
+          name: objectPath
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Image bytes
+          content:
+            image/*:
+              schema: { type: string, format: binary }
+        "403": { description: Private upload belongs to another seller }
+        "404": { description: Image not found }
 components:
   schemas:
     HealthStatus:
@@ -1133,3 +1171,17 @@ components:
       properties:
         areaName: { type: string, minLength: 2, maxLength: 120 }
         active: { type: boolean }
+    UploadUrlRequest:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 180 }
+        size: { type: integer, minimum: 1, maximum: 5242880 }
+        contentType: { type: string, enum: [image/jpeg, image/png, image/webp, image/avif] }
+      required: [name, size, contentType]
+    UploadUrlResponse:
+      type: object
+      properties:
+        uploadURL: { type: string, format: uri }
+        objectPath: { type: string }
+        metadata: { $ref: "#/components/schemas/UploadUrlRequest" }
+      required: [uploadURL, objectPath, metadata]

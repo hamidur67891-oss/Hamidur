@@ -13,7 +13,6 @@ import {
 import { db } from "@workspace/db";
 import {
   complaintsTable,
-  messagesTable,
   notificationsTable,
   productsTable,
   shopsTable,
